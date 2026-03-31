@@ -862,45 +862,175 @@ function renderSummaryTable(mode, m) {
 }
 
 /* ================================================================
-   EXPORT — placeholder (full implementation in Task 7)
+   EXPORT SYSTEM (CSV, IPD-Meta-Pro JSON, R Script)
    ================================================================ */
 
-// Export button handlers — stubs, will be replaced in Task 7
-document.getElementById('export-csv').addEventListener('click', () => {
+async function sha256(text) {
+  var data = new TextEncoder().encode(text);
+  var hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+}
+
+function downloadBlob(content, filename, mimeType) {
+  var blob = new Blob([content], { type: mimeType });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+}
+
+function getColumns() {
+  if (STATE.lastMode === 'km') return ['patient_id', 'arm', 'time', 'event'];
+  if (STATE.lastMode === 'binary') return ['patient_id', 'arm', 'outcome'];
+  return ['patient_id', 'arm', 'value'];
+}
+
+document.getElementById('export-csv').addEventListener('click', function() {
   if (!STATE.lastIPD) return;
-  alert('Export CSV: will be implemented in Task 7. ' + STATE.lastIPD.length + ' patients ready.');
+  var cols = getColumns();
+  var header = cols.join(',');
+  var rows = STATE.lastIPD.map(function(p) {
+    return cols.map(function(c) {
+      var v = p[c];
+      return typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(6)) : v;
+    }).join(',');
+  });
+  downloadBlob(header + '\n' + rows.join('\n'), 'ipd_' + STATE.lastMode + '_seed' + STATE.lastMeta.seed + '.csv', 'text/csv');
 });
-document.getElementById('export-json').addEventListener('click', () => {
+
+document.getElementById('export-json').addEventListener('click', async function() {
   if (!STATE.lastIPD) return;
-  alert('Export JSON: will be implemented in Task 7. ' + STATE.lastIPD.length + ' patients ready.');
+  var m = STATE.lastMeta;
+  var inputStr = JSON.stringify(STATE.lastInput);
+  var hash = await sha256(inputStr);
+
+  var arms = {};
+  for (var i = 0; i < STATE.lastIPD.length; i++) {
+    var p = STATE.lastIPD[i];
+    if (!arms[p.arm]) arms[p.arm] = { name: p.arm, n: 0, patients: [] };
+    arms[p.arm].n++;
+    var patient = { id: p.patient_id };
+    if (STATE.lastMode === 'km') { patient.time = parseFloat(p.time.toFixed(6)); patient.event = p.event; }
+    else if (STATE.lastMode === 'binary') { patient.outcome = p.outcome; }
+    else { patient.value = parseFloat(p.value.toFixed(6)); }
+    arms[p.arm].patients.push(patient);
+  }
+
+  var json = {
+    study_id: m.study_id,
+    source: 'IPD-Simulator v1.0',
+    seed: m.seed,
+    outcome_type: m.outcome_type,
+    arms: Object.values(arms),
+    reconstruction_quality: STATE.lastMetrics,
+    provenance: {
+      input_hash: 'sha256:' + hash,
+      algorithm: m.algorithm,
+      version: '1.0.0',
+      seed: m.seed,
+      timestamp: new Date().toISOString(),
+    },
+  };
+  downloadBlob(JSON.stringify(json, null, 2), 'ipd_' + STATE.lastMode + '_seed' + m.seed + '.json', 'application/json');
 });
-document.getElementById('export-r').addEventListener('click', () => {
+
+document.getElementById('export-r').addEventListener('click', async function() {
   if (!STATE.lastIPD) return;
-  alert('Export R Script: will be implemented in Task 7. ' + STATE.lastIPD.length + ' patients ready.');
+  var m = STATE.lastMeta;
+  var inputStr = JSON.stringify(STATE.lastInput);
+  var hash = await sha256(inputStr);
+  var n = STATE.lastIPD.length;
+
+  var colDefs = '';
+  if (STATE.lastMode === 'km') {
+    colDefs = '  time = c(' + STATE.lastIPD.map(function(p) { return p.time.toFixed(6); }).join(', ') + '),\n'
+      + '  event = c(' + STATE.lastIPD.map(function(p) { return p.event; }).join(', ') + ')';
+  } else if (STATE.lastMode === 'binary') {
+    colDefs = '  outcome = c(' + STATE.lastIPD.map(function(p) { return p.outcome; }).join(', ') + ')';
+  } else {
+    colDefs = '  value = c(' + STATE.lastIPD.map(function(p) { return p.value.toFixed(6); }).join(', ') + ')';
+  }
+
+  var rScript = '# IPD-Simulator v1.0 -- Reconstructed pseudo-IPD\n'
+    + '# Source: ' + m.algorithm + ' | Seed: ' + m.seed + ' | Date: ' + new Date().toISOString().slice(0, 10) + '\n'
+    + '# Input hash: sha256:' + hash + '\n\n'
+    + 'df <- data.frame(\n'
+    + '  patient_id = 1:' + n + ',\n'
+    + '  arm = c(' + STATE.lastIPD.map(function(p) { return '"' + p.arm + '"'; }).join(', ') + '),\n'
+    + colDefs + '\n'
+    + ')\n';
+  downloadBlob(rScript, 'ipd_' + STATE.lastMode + '_seed' + m.seed + '.R', 'text/plain');
 });
 
 /* ================================================================
-   EXAMPLES — placeholder (full data in Task 8)
+   BUILT-IN EXAMPLES
    ================================================================ */
 
-// Example dropdowns — stubs, will be populated with real data in Task 8
-document.getElementById('km-example').addEventListener('change', function() {
-  if (!this.value) return;
-  // Task 8: load pre-digitised example data into the form fields
-  alert('Example "' + this.value + '" will be loaded in Task 8.');
-  this.value = '';
+var EXAMPLES = {
+  // DAPA-HF: Dapagliflozin in HFrEF, NEJM 2019
+  // Primary endpoint: CV death or worsening HF. Digitised from Figure 2.
+  dapahf: {
+    coordsExp: '0, 1.000\n3, 0.955\n6, 0.920\n9, 0.885\n12, 0.860\n15, 0.842\n18, 0.830',
+    coordsCtrl: '0, 1.000\n3, 0.935\n6, 0.885\n9, 0.840\n12, 0.800\n15, 0.775\n18, 0.757',
+    atRisk: '0, 2373, 2371\n3, 2190, 2137\n6, 2025, 1938\n9, 1684, 1600\n12, 1210, 1148\n15, 756, 714\n18, 340, 312',
+    medianExp: '', medianCtrl: '', hr: '0.74',
+  },
+  // PARADIGM-HF: Sacubitril/valsartan, NEJM 2014
+  // Primary endpoint: CV death or HF hospitalization. Digitised from Figure 2.
+  paradigm: {
+    coordsExp: '0, 1.000\n6, 0.935\n12, 0.885\n18, 0.845\n24, 0.810\n30, 0.780\n36, 0.755',
+    coordsCtrl: '0, 1.000\n6, 0.920\n12, 0.855\n18, 0.800\n24, 0.755\n30, 0.720\n36, 0.690',
+    atRisk: '0, 4187, 4212\n6, 3922, 3883\n12, 3663, 3579\n18, 3168, 3049\n24, 2549, 2416\n30, 1800, 1690\n36, 932, 856',
+    medianExp: '', medianCtrl: '', hr: '0.80',
+  },
+  // SGLT2i HF hospitalization: Pooled binary data from 4 trials
+  sglt2i: { events_exp: 235, n_exp: 2373, events_ctrl: 326, n_ctrl: 2371 },
+  // Systolic BP reduction: Amlodipine vs placebo representative trial
+  bp: { mean_exp: -5.2, sd_exp: 8.1, n_exp: 120, mean_ctrl: -2.1, sd_ctrl: 7.9, n_ctrl: 118 },
+};
+
+document.getElementById('km-example').addEventListener('change', function(e) {
+  var ex = EXAMPLES[e.target.value];
+  if (!ex) return;
+  document.getElementById('km-coords-exp').value = ex.coordsExp;
+  document.getElementById('km-coords-ctrl').value = ex.coordsCtrl;
+  document.getElementById('km-atrisk').value = ex.atRisk;
+  if (ex.hr) document.getElementById('km-hr').value = ex.hr;
+  if (ex.medianExp) document.getElementById('km-median-exp').value = ex.medianExp;
+  if (ex.medianCtrl) document.getElementById('km-median-ctrl').value = ex.medianCtrl;
+  saveDraft();
+  document.getElementById('km-run').click();
+  e.target.value = '';
 });
 
-document.getElementById('bin-example').addEventListener('change', function() {
-  if (!this.value) return;
-  alert('Example "' + this.value + '" will be loaded in Task 8.');
-  this.value = '';
+document.getElementById('bin-example').addEventListener('change', function(e) {
+  var ex = EXAMPLES[e.target.value];
+  if (!ex) return;
+  document.getElementById('bin-events-exp').value = ex.events_exp;
+  document.getElementById('bin-n-exp').value = ex.n_exp;
+  document.getElementById('bin-events-ctrl').value = ex.events_ctrl;
+  document.getElementById('bin-n-ctrl').value = ex.n_ctrl;
+  saveDraft();
+  document.getElementById('bin-run').click();
+  e.target.value = '';
 });
 
-document.getElementById('cont-example').addEventListener('change', function() {
-  if (!this.value) return;
-  alert('Example "' + this.value + '" will be loaded in Task 8.');
-  this.value = '';
+document.getElementById('cont-example').addEventListener('change', function(e) {
+  var ex = EXAMPLES[e.target.value];
+  if (!ex) return;
+  document.getElementById('cont-mean-exp').value = ex.mean_exp;
+  document.getElementById('cont-sd-exp').value = ex.sd_exp;
+  document.getElementById('cont-n-exp').value = ex.n_exp;
+  document.getElementById('cont-mean-ctrl').value = ex.mean_ctrl;
+  document.getElementById('cont-sd-ctrl').value = ex.sd_ctrl;
+  document.getElementById('cont-n-ctrl').value = ex.n_ctrl;
+  saveDraft();
+  document.getElementById('cont-run').click();
+  e.target.value = '';
 });
 
 /* ================================================================
@@ -1119,10 +1249,89 @@ function escapeHtml(str) {
 }
 
 /* ================================================================
-   LOCALSTORAGE PERSISTENCE — placeholder (Task 9)
+   LOCALSTORAGE PERSISTENCE
    ================================================================ */
 
-// Task 9: save/restore tab inputs to ipdsim_draft localStorage key
+var LS_KEY = 'ipdsim_draft';
+
+function saveDraft() {
+  var draft = {
+    km: {
+      coordsExp: document.getElementById('km-coords-exp').value,
+      coordsCtrl: document.getElementById('km-coords-ctrl').value,
+      atRisk: document.getElementById('km-atrisk').value,
+      seed: document.getElementById('km-seed').value,
+      medianExp: document.getElementById('km-median-exp').value,
+      medianCtrl: document.getElementById('km-median-ctrl').value,
+      hr: document.getElementById('km-hr').value,
+    },
+    binary: {
+      eventsExp: document.getElementById('bin-events-exp').value,
+      nExp: document.getElementById('bin-n-exp').value,
+      eventsCtrl: document.getElementById('bin-events-ctrl').value,
+      nCtrl: document.getElementById('bin-n-ctrl').value,
+      seed: document.getElementById('bin-seed').value,
+      studyId: document.getElementById('bin-study-id').value,
+    },
+    continuous: {
+      meanExp: document.getElementById('cont-mean-exp').value,
+      sdExp: document.getElementById('cont-sd-exp').value,
+      nExp: document.getElementById('cont-n-exp').value,
+      meanCtrl: document.getElementById('cont-mean-ctrl').value,
+      sdCtrl: document.getElementById('cont-sd-ctrl').value,
+      nCtrl: document.getElementById('cont-n-ctrl').value,
+      corr: document.getElementById('cont-corr').value,
+      seed: document.getElementById('cont-seed').value,
+      studyId: document.getElementById('cont-study-id').value,
+    },
+  };
+  try { localStorage.setItem(LS_KEY, JSON.stringify(draft)); } catch (e) { /* quota exceeded */ }
+}
+
+function loadDraft() {
+  try {
+    var raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    var d = JSON.parse(raw);
+    if (d.km) {
+      if (d.km.coordsExp) document.getElementById('km-coords-exp').value = d.km.coordsExp;
+      if (d.km.coordsCtrl) document.getElementById('km-coords-ctrl').value = d.km.coordsCtrl;
+      if (d.km.atRisk) document.getElementById('km-atrisk').value = d.km.atRisk;
+      if (d.km.seed) document.getElementById('km-seed').value = d.km.seed;
+      if (d.km.medianExp) document.getElementById('km-median-exp').value = d.km.medianExp;
+      if (d.km.medianCtrl) document.getElementById('km-median-ctrl').value = d.km.medianCtrl;
+      if (d.km.hr) document.getElementById('km-hr').value = d.km.hr;
+    }
+    if (d.binary) {
+      if (d.binary.eventsExp) document.getElementById('bin-events-exp').value = d.binary.eventsExp;
+      if (d.binary.nExp) document.getElementById('bin-n-exp').value = d.binary.nExp;
+      if (d.binary.eventsCtrl) document.getElementById('bin-events-ctrl').value = d.binary.eventsCtrl;
+      if (d.binary.nCtrl) document.getElementById('bin-n-ctrl').value = d.binary.nCtrl;
+      if (d.binary.seed) document.getElementById('bin-seed').value = d.binary.seed;
+      if (d.binary.studyId) document.getElementById('bin-study-id').value = d.binary.studyId;
+    }
+    if (d.continuous) {
+      if (d.continuous.meanExp) document.getElementById('cont-mean-exp').value = d.continuous.meanExp;
+      if (d.continuous.sdExp) document.getElementById('cont-sd-exp').value = d.continuous.sdExp;
+      if (d.continuous.nExp) document.getElementById('cont-n-exp').value = d.continuous.nExp;
+      if (d.continuous.meanCtrl) document.getElementById('cont-mean-ctrl').value = d.continuous.meanCtrl;
+      if (d.continuous.sdCtrl) document.getElementById('cont-sd-ctrl').value = d.continuous.sdCtrl;
+      if (d.continuous.nCtrl) document.getElementById('cont-n-ctrl').value = d.continuous.nCtrl;
+      if (d.continuous.corr) document.getElementById('cont-corr').value = d.continuous.corr;
+      if (d.continuous.seed) document.getElementById('cont-seed').value = d.continuous.seed;
+      if (d.continuous.studyId) document.getElementById('cont-study-id').value = d.continuous.studyId;
+    }
+  } catch (e) { /* corrupted data */ }
+}
+
+// Auto-save on input changes (both change and input events)
+document.querySelectorAll('textarea, input').forEach(function(el) {
+  el.addEventListener('change', saveDraft);
+  el.addEventListener('input', saveDraft);
+});
+
+// Load saved draft on startup
+loadDraft();
 
 </script>
 </body>
