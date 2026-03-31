@@ -62,8 +62,8 @@
     .metrics-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     .metrics-table th, .metrics-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
     .metrics-table th { font-weight: 600; color: var(--fg2); }
-    .badge-good { background: var(--green); color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; display: inline-block; }
-    .badge-ok { background: var(--amber); color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; display: inline-block; }
+    .badge-good { background: #15803d; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; display: inline-block; }
+    .badge-ok { background: #92400e; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; display: inline-block; }
     .badge-poor { background: var(--red); color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; display: inline-block; }
     .warning { background: #fef3c7; border-left: 4px solid var(--amber); padding: 12px 16px; margin: 12px 0; border-radius: 0 var(--radius) var(--radius) 0; color: #92400e; }
     .seed-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -140,7 +140,7 @@
         </select>
       </div>
       <div id="km-warnings" aria-live="polite"></div>
-      <div id="km-result" class="result-box hidden"></div>
+      <div id="km-result" class="result-box hidden" aria-live="polite"></div>
     </div>
 
     <!-- ====== Binary Simulate Tab ====== -->
@@ -175,7 +175,7 @@
         </select>
       </div>
       <div id="bin-warnings" aria-live="polite"></div>
-      <div id="bin-result" class="result-box hidden"></div>
+      <div id="bin-result" class="result-box hidden" aria-live="polite"></div>
     </div>
 
     <!-- ====== Continuous Simulate Tab ====== -->
@@ -217,7 +217,7 @@
         </select>
       </div>
       <div id="cont-warnings" aria-live="polite"></div>
-      <div id="cont-result" class="result-box hidden"></div>
+      <div id="cont-result" class="result-box hidden" aria-live="polite"></div>
     </div>
 
     <!-- ====== Validation Tab ====== -->
@@ -326,9 +326,9 @@ function makeRng(seed) {
   return {
     /** Returns float in [0, 1) */
     next() {
-      const result = Math.imul(s[1] * 5, 7) >>> 0;
-      const rot = ((result << 7) | (result >>> 25)) >>> 0;
-      const val = (rot >>> 0) / 4294967296;
+      const r = Math.imul(s[1], 5) >>> 0;
+      const rot = ((r << 7) | (r >>> 25)) >>> 0;
+      const val = (Math.imul(rot, 9) >>> 0) / 4294967296;
       const t = s[1] << 9;
       s[2] ^= s[0]; s[3] ^= s[1]; s[1] ^= s[2]; s[0] ^= s[3];
       s[2] ^= t;
@@ -457,16 +457,19 @@ function simulateContinuous(meanExp, sdExp, nExp, meanCtrl, sdCtrl, nCtrl, corre
       rawExp.push(z1);
       rawCtrl.push(z1 * correlation + z2 * L22);
     }
-    // Post-hoc adjust the paired portions
-    expValues = postHocAdjust(rawExp, meanExp, sdExp);
-    ctrlValues = postHocAdjust(rawCtrl, meanCtrl, sdCtrl);
-    // Fill remaining if arms differ in N
+    // Start from paired raw values
+    expValues = [...rawExp];
+    ctrlValues = [...rawCtrl];
+    // Fill remaining if arms differ in N (unpaired extras)
     if (nExp > nPaired) {
-      expValues = expValues.concat(generateNormal(nExp - nPaired, meanExp, sdExp));
+      for (let i = 0; i < nExp - nPaired; i++) expValues.push(rng.nextGaussian());
     }
     if (nCtrl > nPaired) {
-      ctrlValues = ctrlValues.concat(generateNormal(nCtrl - nPaired, meanCtrl, sdCtrl));
+      for (let i = 0; i < nCtrl - nPaired; i++) ctrlValues.push(rng.nextGaussian());
     }
+    // Note: Post-hoc mean/SD adjustment may slightly distort the achieved between-arm correlation.
+    expValues = postHocAdjust(expValues, meanExp, sdExp);
+    ctrlValues = postHocAdjust(ctrlValues, meanCtrl, sdCtrl);
   }
 
   const ipd = [];
@@ -697,15 +700,32 @@ function computeKMCurve(patients) {
 }
 
 function computeLogRankHR(ipd) {
-  /** Simplified HR estimate: ratio of incidence rates (events / total person-time). */
-  const exp = ipd.filter(p => p.arm === 'experimental');
-  const ctrl = ipd.filter(p => p.arm === 'control');
-  const dExp = exp.filter(p => p.event === 1).length;
-  const dCtrl = ctrl.filter(p => p.event === 1).length;
-  const tExp = exp.reduce((s, p) => s + p.time, 0);
-  const tCtrl = ctrl.reduce((s, p) => s + p.time, 0);
-  if (tExp === 0 || tCtrl === 0 || dCtrl === 0) return null;
-  return (dExp / tExp) / (dCtrl / tCtrl);
+  /** Mantel-Haenszel O-E/V log-rank HR estimator. */
+  const sorted = [...ipd].sort((a, b) => a.time - b.time);
+  let nRiskExp = ipd.filter(p => p.arm === 'experimental').length;
+  let nRiskCtrl = ipd.filter(p => p.arm === 'control').length;
+  let sumOE = 0, sumV = 0;
+  let i = 0;
+  while (i < sorted.length) {
+    const t = sorted[i].time;
+    let dExp = 0, dCtrl = 0, cExp = 0, cCtrl = 0;
+    while (i < sorted.length && sorted[i].time === t) {
+      if (sorted[i].event === 1) { if (sorted[i].arm === 'experimental') dExp++; else dCtrl++; }
+      else { if (sorted[i].arm === 'experimental') cExp++; else cCtrl++; }
+      i++;
+    }
+    const d = dExp + dCtrl;
+    const n = nRiskExp + nRiskCtrl;
+    if (d > 0 && n > 1) {
+      const eExp = nRiskExp * d / n;
+      sumOE += (dExp - eExp);
+      sumV += nRiskExp * nRiskCtrl * d * (n - d) / (n * n * (n - 1));
+    }
+    nRiskExp -= (dExp + cExp);
+    nRiskCtrl -= (dCtrl + cCtrl);
+  }
+  if (sumV === 0) return null;
+  return Math.exp(sumOE / sumV);
 }
 
 function computeMedianSurvival(kmCurve) {
@@ -757,6 +777,8 @@ function trafficLight(value, goodThresh, okThresh) {
 function renderKMChart(div, m) {
   const input = STATE.lastInput;
   if (typeof Plotly === 'undefined') { div.innerHTML = '<p>Plotly not loaded (offline?). Chart unavailable.</p>'; return; }
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const fontColor = isDark ? '#e2e8f0' : '#1a1a2e';
   const traces = [
     { x: input.coordsExp.map(c => c.t), y: input.coordsExp.map(c => c.s),
       mode: 'markers', name: 'Original (Exp)', marker: { color: '#2563eb', size: 6 } },
@@ -769,8 +791,9 @@ function renderKMChart(div, m) {
   ];
   Plotly.newPlot(div, traces, {
     title: 'KM Reconstruction: Original vs Reconstructed',
-    xaxis: { title: 'Time' },
-    yaxis: { title: 'Survival Probability', range: [0, 1.05] },
+    font: { color: fontColor },
+    xaxis: { title: 'Time', color: fontColor },
+    yaxis: { title: 'Survival Probability', range: [0, 1.05], color: fontColor },
     legend: { x: 0.7, y: 0.95 },
     margin: { t: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
@@ -780,6 +803,8 @@ function renderKMChart(div, m) {
 
 function renderBinaryChart(div, m) {
   if (typeof Plotly === 'undefined') { div.innerHTML = '<p>Plotly not loaded (offline?). Chart unavailable.</p>'; return; }
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const fontColor = isDark ? '#e2e8f0' : '#1a1a2e';
   Plotly.newPlot(div, [
     { x: ['Events (Exp)', 'Non-events (Exp)', 'Events (Ctrl)', 'Non-events (Ctrl)'],
       y: [m.events_exp, m.n_exp - m.events_exp, m.events_ctrl, m.n_ctrl - m.events_ctrl],
@@ -789,6 +814,9 @@ function renderBinaryChart(div, m) {
       type: 'bar', name: 'Reconstructed', marker: { color: '#16a34a' } },
   ], {
     title: 'Binary: Input vs Reconstructed (Exact Match)',
+    font: { color: fontColor },
+    xaxis: { color: fontColor },
+    yaxis: { color: fontColor },
     barmode: 'group',
     margin: { t: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
@@ -798,6 +826,8 @@ function renderBinaryChart(div, m) {
 
 function renderContinuousChart(div, m) {
   if (typeof Plotly === 'undefined') { div.innerHTML = '<p>Plotly not loaded (offline?). Chart unavailable.</p>'; return; }
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const fontColor = isDark ? '#e2e8f0' : '#1a1a2e';
   const expVals = STATE.lastIPD.filter(p => p.arm === 'experimental').map(p => p.value);
   const ctrlVals = STATE.lastIPD.filter(p => p.arm === 'control').map(p => p.value);
   Plotly.newPlot(div, [
@@ -805,10 +835,11 @@ function renderContinuousChart(div, m) {
     { x: ctrlVals, type: 'histogram', name: 'Ctrl (simulated)', opacity: 0.6, marker: { color: '#dc2626' } },
   ], {
     title: 'Continuous: Distribution of Simulated Values',
+    font: { color: fontColor },
     barmode: 'overlay',
     margin: { t: 40 },
-    xaxis: { title: 'Value' },
-    yaxis: { title: 'Count' },
+    xaxis: { title: 'Value', color: fontColor },
+    yaxis: { title: 'Count', color: fontColor },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
   }, { responsive: true });
@@ -866,6 +897,7 @@ function renderSummaryTable(mode, m) {
    ================================================================ */
 
 async function sha256(text) {
+  if (!crypto || !crypto.subtle) return 'unavailable-insecure-context';
   var data = new TextEncoder().encode(text);
   var hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
@@ -1095,6 +1127,9 @@ document.getElementById('cont-run').addEventListener('click', function() {
   if ([me, se, ne, mc, sc, nc].some(function(v) { return isNaN(v); })) {
     warn.innerHTML = '<div class="warning">All six fields are required.</div>';
     return;
+  }
+  if (corr > 0) {
+    warn.innerHTML = '<div class="warning">Note: Post-hoc mean/SD adjustment may slightly distort the achieved between-arm correlation.</div>';
   }
   try {
     var result = simulateContinuous(me, se, ne, mc, sc, nc, corr, seed);
