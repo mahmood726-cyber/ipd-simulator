@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IPD Simulator — Reconstruct Individual Participant Data</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8f9fa; --bg2: #ffffff; --fg: #1a1a2e; --fg2: #555;
+      --accent: #2563eb; --accent-hover: #1d4ed8;
+      --green: #16a34a; --amber: #d97706; --red: #dc2626;
+      --border: #e2e8f0; --radius: 8px;
+      --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      --mono: 'Cascadia Code', 'Fira Code', monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a; --bg2: #1e293b; --fg: #e2e8f0; --fg2: #94a3b8;
+        --border: #334155; --accent: #60a5fa; --accent-hover: #93bbfc;
+      }
+      .warning { background: #422006; color: #fde68a; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--font); background: var(--bg); color: var(--fg); line-height: 1.6; }
+    a.skip-nav { position: absolute; top: -40px; left: 0; background: var(--accent); color: #fff; padding: 8px 16px; z-index: 1000; text-decoration: none; font-weight: 600; }
+    a.skip-nav:focus { top: 0; }
+    header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 24px; }
+    header h1 { font-size: 1.5rem; font-weight: 700; }
+    header p { color: var(--fg2); font-size: 0.9rem; margin-top: 4px; }
+    .tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border); background: var(--bg2); padding: 0 24px; }
+    .tab-btn { padding: 12px 20px; border: none; background: none; cursor: pointer; font-size: 0.95rem;
+      color: var(--fg2); border-bottom: 3px solid transparent; transition: all 0.15s; font-family: var(--font); }
+    .tab-btn:hover { color: var(--fg); background: var(--bg); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .tab-panel { display: none; padding: 24px; max-width: 960px; margin: 0 auto; }
+    .tab-panel.active { display: block; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.9rem; }
+    .form-group textarea, .form-group input[type="text"], .form-group input[type="number"] {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg); color: var(--fg); font-family: var(--mono); font-size: 0.85rem; }
+    .form-group textarea { min-height: 120px; resize: vertical; }
+    .form-group input[type="number"] { width: 140px; }
+    .form-row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .form-row .form-group { flex: 1; min-width: 120px; }
+    .btn { padding: 10px 20px; border: none; border-radius: var(--radius); cursor: pointer; font-size: 0.95rem;
+      font-weight: 600; transition: background 0.15s; font-family: var(--font); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--bg); color: var(--fg); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .btn-row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+    .result-box { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px; margin-top: 16px; }
+    .metrics-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .metrics-table th, .metrics-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    .metrics-table th { font-weight: 600; color: var(--fg2); }
+    .badge-good { background: var(--green); color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; display: inline-block; }
+    .badge-ok { background: var(--amber); color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; display: inline-block; }
+    .badge-poor { background: var(--red); color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; display: inline-block; }
+    .warning { background: #fef3c7; border-left: 4px solid var(--amber); padding: 12px 16px; margin: 12px 0; border-radius: 0 var(--radius) var(--radius) 0; color: #92400e; }
+    .seed-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .seed-row label { font-weight: 600; font-size: 0.9rem; margin: 0; }
+    .seed-row input { width: 100px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg); color: var(--fg); font-family: var(--mono); }
+    footer { text-align: center; padding: 24px; color: var(--fg2); font-size: 0.8rem; border-top: 1px solid var(--border); margin-top: 40px; }
+    #validation-chart { width: 100%; height: 400px; }
+    .summary-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .summary-table th, .summary-table td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+    .export-section { margin-top: 20px; }
+    .hidden { display: none; }
+    [aria-live] { position: relative; }
+    select.btn { appearance: auto; }
+  </style>
+</head>
+<body>
+  <a href="#main" class="skip-nav">Skip to main content</a>
+  <header>
+    <h1>IPD Simulator</h1>
+    <p>Reconstruct Individual Participant Data from published aggregate summaries</p>
+  </header>
+
+  <nav class="tab-bar" role="tablist" aria-label="Simulator modes">
+    <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-km" id="btn-km" tabindex="0">KM Reconstruct</button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-binary" id="btn-binary" tabindex="-1">Binary Simulate</button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-continuous" id="btn-continuous" tabindex="-1">Continuous Simulate</button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-validation" id="btn-validation" tabindex="-1">Validation</button>
+  </nav>
+
+  <main id="main">
+    <!-- ====== KM Reconstruct Tab ====== -->
+    <div class="tab-panel active" role="tabpanel" id="tab-km" aria-labelledby="btn-km">
+      <h2>Kaplan-Meier Reconstruction (Guyot Algorithm)</h2>
+      <p style="color:var(--fg2);margin-bottom:16px">Paste digitised KM coordinates and at-risk numbers to reconstruct pseudo-IPD with individual event times.</p>
+
+      <div class="seed-row">
+        <label for="km-seed">Seed:</label>
+        <input type="number" id="km-seed" value="42" min="0" step="1">
+        <button class="btn btn-secondary" id="km-regenerate" title="Increment seed and re-run">Regenerate</button>
+      </div>
+
+      <div class="form-group">
+        <label for="km-coords-exp">Experimental Arm — Digitised Coordinates (Time, Survival)</label>
+        <textarea id="km-coords-exp" placeholder="0, 1.000&#10;2, 0.923&#10;4, 0.871&#10;..."></textarea>
+      </div>
+      <div class="form-group">
+        <label for="km-coords-ctrl">Control Arm — Digitised Coordinates (Time, Survival)</label>
+        <textarea id="km-coords-ctrl" placeholder="0, 1.000&#10;2, 0.952&#10;4, 0.901&#10;..."></textarea>
+      </div>
+      <div class="form-group">
+        <label for="km-atrisk">At-Risk Table (Time, NRisk_Exp, NRisk_Ctrl)</label>
+        <textarea id="km-atrisk" placeholder="0, 150, 148&#10;6, 132, 121&#10;12, 110, 98&#10;..."></textarea>
+      </div>
+
+      <details style="margin-bottom:16px">
+        <summary style="cursor:pointer;font-weight:600;font-size:0.9rem">Optional: Published Summary (for validation)</summary>
+        <div class="form-row" style="margin-top:8px">
+          <div class="form-group"><label for="km-median-exp">Median Survival (Exp)</label><input type="number" id="km-median-exp" step="0.1" placeholder="e.g. 14.2"></div>
+          <div class="form-group"><label for="km-median-ctrl">Median Survival (Ctrl)</label><input type="number" id="km-median-ctrl" step="0.1" placeholder="e.g. 9.8"></div>
+          <div class="form-group"><label for="km-hr">Hazard Ratio</label><input type="number" id="km-hr" step="0.01" placeholder="e.g. 0.74"></div>
+        </div>
+      </details>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="km-run">Reconstruct IPD</button>
+        <button class="btn btn-secondary" id="km-load-json">Load from KMcurve JSON</button>
+        <input type="file" id="km-json-file" accept=".json" class="hidden">
+        <select id="km-example" class="btn btn-secondary" style="padding:10px 12px">
+          <option value="">Load Example...</option>
+          <!-- Examples will be populated in Task 8 -->
+          <option value="dapahf">DAPA-HF</option>
+          <option value="paradigm">PARADIGM-HF</option>
+        </select>
+      </div>
+      <div id="km-warnings" aria-live="polite"></div>
+      <div id="km-result" class="result-box hidden"></div>
+    </div>
+
+    <!-- ====== Binary Simulate Tab ====== -->
+    <div class="tab-panel" role="tabpanel" id="tab-binary" aria-labelledby="btn-binary">
+      <h2>Binary Outcome Simulation</h2>
+      <p style="color:var(--fg2);margin-bottom:16px">Enter a 2x2 table to generate individual-level binary outcomes preserving exact marginals.</p>
+
+      <div class="seed-row">
+        <label for="bin-seed">Seed:</label>
+        <input type="number" id="bin-seed" value="42" min="0" step="1">
+        <button class="btn btn-secondary" id="bin-regenerate">Regenerate</button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group"><label for="bin-events-exp">Events (Exp)</label><input type="number" id="bin-events-exp" min="0" placeholder="23"></div>
+        <div class="form-group"><label for="bin-n-exp">N (Exp)</label><input type="number" id="bin-n-exp" min="1" placeholder="150"></div>
+        <div class="form-group"><label for="bin-events-ctrl">Events (Ctrl)</label><input type="number" id="bin-events-ctrl" min="0" placeholder="41"></div>
+        <div class="form-group"><label for="bin-n-ctrl">N (Ctrl)</label><input type="number" id="bin-n-ctrl" min="1" placeholder="148"></div>
+      </div>
+
+      <div class="form-group">
+        <label for="bin-study-id">Study ID (optional)</label>
+        <input type="text" id="bin-study-id" placeholder="e.g. Smith2024" style="width:240px">
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="bin-run">Simulate IPD</button>
+        <select id="bin-example" class="btn btn-secondary" style="padding:10px 12px">
+          <option value="">Load Example...</option>
+          <!-- Examples will be populated in Task 8 -->
+          <option value="sglt2i">SGLT2i HF Hospitalization</option>
+        </select>
+      </div>
+      <div id="bin-warnings" aria-live="polite"></div>
+      <div id="bin-result" class="result-box hidden"></div>
+    </div>
+
+    <!-- ====== Continuous Simulate Tab ====== -->
+    <div class="tab-panel" role="tabpanel" id="tab-continuous" aria-labelledby="btn-continuous">
+      <h2>Continuous Outcome Simulation</h2>
+      <p style="color:var(--fg2);margin-bottom:16px">Enter mean, SD, and N per arm to generate individual-level continuous outcomes.</p>
+
+      <div class="seed-row">
+        <label for="cont-seed">Seed:</label>
+        <input type="number" id="cont-seed" value="42" min="0" step="1">
+        <button class="btn btn-secondary" id="cont-regenerate">Regenerate</button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group"><label for="cont-mean-exp">Mean (Exp)</label><input type="number" id="cont-mean-exp" step="0.01" placeholder="-5.2"></div>
+        <div class="form-group"><label for="cont-sd-exp">SD (Exp)</label><input type="number" id="cont-sd-exp" step="0.01" min="0.001" placeholder="8.1"></div>
+        <div class="form-group"><label for="cont-n-exp">N (Exp)</label><input type="number" id="cont-n-exp" min="2" placeholder="120"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label for="cont-mean-ctrl">Mean (Ctrl)</label><input type="number" id="cont-mean-ctrl" step="0.01" placeholder="-2.1"></div>
+        <div class="form-group"><label for="cont-sd-ctrl">SD (Ctrl)</label><input type="number" id="cont-sd-ctrl" step="0.01" min="0.001" placeholder="7.9"></div>
+        <div class="form-group"><label for="cont-n-ctrl">N (Ctrl)</label><input type="number" id="cont-n-ctrl" min="2" placeholder="118"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label for="cont-corr">Between-arm Correlation (0 for independent)</label><input type="number" id="cont-corr" step="0.01" min="0" max="0.99" value="0" style="width:100px"></div>
+      </div>
+
+      <div class="form-group">
+        <label for="cont-study-id">Study ID (optional)</label>
+        <input type="text" id="cont-study-id" placeholder="e.g. Jones2023" style="width:240px">
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="cont-run">Simulate IPD</button>
+        <select id="cont-example" class="btn btn-secondary" style="padding:10px 12px">
+          <option value="">Load Example...</option>
+          <!-- Examples will be populated in Task 8 -->
+          <option value="bp">Systolic BP Reduction</option>
+        </select>
+      </div>
+      <div id="cont-warnings" aria-live="polite"></div>
+      <div id="cont-result" class="result-box hidden"></div>
+    </div>
+
+    <!-- ====== Validation Tab ====== -->
+    <div class="tab-panel" role="tabpanel" id="tab-validation" aria-labelledby="btn-validation">
+      <h2>Validation &amp; Export</h2>
+      <p style="color:var(--fg2);margin-bottom:16px">Review reconstruction quality, compare against published values, and export pseudo-IPD.</p>
+      <div id="validation-empty" style="text-align:center;padding:60px 0;color:var(--fg2)">
+        <p style="font-size:1.1rem">No reconstruction yet.</p>
+        <p>Run a simulation from one of the other tabs to see validation results here.</p>
+      </div>
+      <div id="validation-content" class="hidden">
+        <div id="validation-chart"></div>
+        <h3 style="margin-top:20px">Agreement Metrics</h3>
+        <table class="metrics-table" id="metrics-table"><tbody></tbody></table>
+        <h3 style="margin-top:20px">Pseudo-IPD Summary</h3>
+        <table class="summary-table" id="summary-table"><tbody></tbody></table>
+        <div class="export-section">
+          <h3>Export</h3>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="export-csv">Download CSV</button>
+            <button class="btn btn-primary" id="export-json">Download IPD-Meta-Pro JSON</button>
+            <button class="btn btn-primary" id="export-r">Download R Script</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    IPD Simulator v1.0 &mdash; Mahmood Ahmad, Royal Free Hospital, London
+    &mdash; <a href="https://github.com/mahmood789/ipdsimulator" style="color:var(--accent)">GitHub</a>
+    &mdash; MIT License
+  </footer>
+
+<script>
+'use strict';
+
+/* ================================================================
+   STATE — shared across all tabs
+   ================================================================ */
+
+const STATE = {
+  lastMode: null,       // 'km' | 'binary' | 'continuous'
+  lastIPD: null,        // array of patient objects
+  lastMeta: null,       // metadata for export (study_id, seed, etc.)
+  lastMetrics: null,    // validation metrics
+  lastInput: null,      // raw input data for provenance
+};
+
+/* ================================================================
+   TAB SWITCHING — ARIA-compliant keyboard navigation
+   ================================================================ */
+
+(function initTabs() {
+  const tabs = document.querySelectorAll('.tab-btn');
+  tabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabs.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+        b.setAttribute('tabindex', '-1');
+      });
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+      btn.setAttribute('tabindex', '0');
+      document.getElementById(btn.getAttribute('aria-controls')).classList.add('active');
+    });
+    btn.addEventListener('keydown', e => {
+      const allTabs = [...document.querySelectorAll('.tab-btn')];
+      const idx = allTabs.indexOf(e.target);
+      let newIdx = -1;
+      if (e.key === 'ArrowRight') { newIdx = (idx + 1) % allTabs.length; }
+      else if (e.key === 'ArrowLeft') { newIdx = (idx - 1 + allTabs.length) % allTabs.length; }
+      else if (e.key === 'Home') { newIdx = 0; }
+      else if (e.key === 'End') { newIdx = allTabs.length - 1; }
+      if (newIdx >= 0) {
+        e.preventDefault();
+        allTabs[newIdx].focus();
+        allTabs[newIdx].click();
+      }
+    });
+  });
+})();
+
+/* ================================================================
+   SEEDED PRNG — xoshiro128**
+   ================================================================ */
+
+function splitmix32(a) {
+  return function() {
+    a |= 0; a = a + 0x9e3779b9 | 0;
+    let t = a ^ (a >>> 16);
+    t = Math.imul(t, 0x21f0aaad);
+    t = t ^ (t >>> 15);
+    t = Math.imul(t, 0x735a2d97);
+    return ((t ^ (t >>> 15)) >>> 0) / 4294967296;
+  };
+}
+
+function makeRng(seed) {
+  const sm = splitmix32(seed);
+  const s = new Uint32Array(4);
+  for (let i = 0; i < 4; i++) s[i] = (sm() * 4294967296) >>> 0;
+
+  return {
+    /** Returns float in [0, 1) */
+    next() {
+      const result = Math.imul(s[1] * 5, 7) >>> 0;
+      const rot = ((result << 7) | (result >>> 25)) >>> 0;
+      const val = (rot >>> 0) / 4294967296;
+      const t = s[1] << 9;
+      s[2] ^= s[0]; s[3] ^= s[1]; s[1] ^= s[2]; s[0] ^= s[3];
+      s[2] ^= t;
+      s[3] = ((s[3] << 11) | (s[3] >>> 21)) >>> 0;
+      return val;
+    },
+
+    /** Box-Muller: returns pair of standard normal deviates */
+    nextGaussianPair() {
+      let u1, u2;
+      do { u1 = this.next(); } while (u1 === 0);
+      u2 = this.next();
+      const r = Math.sqrt(-2 * Math.log(u1));
+      return [r * Math.cos(2 * Math.PI * u2), r * Math.sin(2 * Math.PI * u2)];
+    },
+
+    /** Single standard normal deviate */
+    nextGaussian() {
+      return this.nextGaussianPair()[0];
+    },
+
+    /** Fisher-Yates shuffle (in-place) */
+    shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(this.next() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    },
+  };
+}
+
+/* ================================================================
+   BINARY SIMULATOR
+   ================================================================ */
+
+function simulateBinary(eventsExp, nExp, eventsCtrl, nCtrl, seed) {
+  if (eventsExp > nExp || eventsCtrl > nCtrl) throw new Error('Events cannot exceed N');
+  if (nExp < 1 || nCtrl < 1) throw new Error('N must be >= 1');
+  if (eventsExp < 0 || eventsCtrl < 0) throw new Error('Events must be >= 0');
+
+  const rng = makeRng(seed);
+  const expOutcomes = Array(nExp).fill(0);
+  for (let i = 0; i < eventsExp; i++) expOutcomes[i] = 1;
+  rng.shuffle(expOutcomes);
+
+  const ctrlOutcomes = Array(nCtrl).fill(0);
+  for (let i = 0; i < eventsCtrl; i++) ctrlOutcomes[i] = 1;
+  rng.shuffle(ctrlOutcomes);
+
+  const ipd = [];
+  let pid = 1;
+  for (let i = 0; i < nExp; i++) {
+    ipd.push({ patient_id: pid++, arm: 'experimental', outcome: expOutcomes[i] });
+  }
+  for (let i = 0; i < nCtrl; i++) {
+    ipd.push({ patient_id: pid++, arm: 'control', outcome: ctrlOutcomes[i] });
+  }
+
+  // Validate marginals (deterministic — must always match)
+  const reExp = ipd.filter(p => p.arm === 'experimental' && p.outcome === 1).length;
+  const reCtrl = ipd.filter(p => p.arm === 'control' && p.outcome === 1).length;
+  if (reExp !== eventsExp || reCtrl !== eventsCtrl) {
+    throw new Error('Internal error: marginal mismatch after shuffle');
+  }
+
+  return {
+    ipd,
+    metrics: {
+      n_exp: nExp, n_ctrl: nCtrl,
+      events_exp: eventsExp, events_ctrl: eventsCtrl,
+      event_rate_exp: eventsExp / nExp,
+      event_rate_ctrl: eventsCtrl / nCtrl,
+      marginals_exact: true,
+    },
+  };
+}
+
+/* ================================================================
+   CONTINUOUS SIMULATOR
+   ================================================================ */
+
+/**
+ * Post-hoc adjust an array so its sample mean and SD exactly match targets.
+ * Must be defined before simulateContinuous to avoid reference errors.
+ */
+function postHocAdjust(arr, targetMean, targetSd) {
+  const n = arr.length;
+  if (n < 2) return arr.map(() => targetMean);
+  const m = arr.reduce((s, v) => s + v, 0) / n;
+  const sd = Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / (n - 1));
+  if (sd === 0) return arr.map(() => targetMean);
+  return arr.map(v => ((v - m) / sd) * targetSd + targetMean);
+}
+
+function simulateContinuous(meanExp, sdExp, nExp, meanCtrl, sdCtrl, nCtrl, correlation, seed) {
+  if (sdExp <= 0 || sdCtrl <= 0) throw new Error('SD must be > 0');
+  if (nExp < 2 || nCtrl < 2) throw new Error('N must be >= 2');
+  if (correlation < 0 || correlation >= 1) throw new Error('Correlation must be in [0, 1)');
+
+  const rng = makeRng(seed);
+
+  function generateNormal(n, targetMean, targetSd) {
+    const raw = [];
+    for (let i = 0; i < n; i += 2) {
+      const pair = rng.nextGaussianPair();
+      raw.push(pair[0]);
+      if (i + 1 < n) raw.push(pair[1]);
+    }
+    return postHocAdjust(raw, targetMean, targetSd);
+  }
+
+  let expValues, ctrlValues;
+
+  if (correlation === 0) {
+    expValues = generateNormal(nExp, meanExp, sdExp);
+    ctrlValues = generateNormal(nCtrl, meanCtrl, sdCtrl);
+  } else {
+    // Bivariate normal via Cholesky decomposition
+    const nPaired = Math.min(nExp, nCtrl);
+    const L22 = Math.sqrt(1 - correlation * correlation);
+    const rawExp = [], rawCtrl = [];
+    for (let i = 0; i < nPaired; i++) {
+      const z1 = rng.nextGaussian();
+      const z2 = rng.nextGaussian();
+      rawExp.push(z1);
+      rawCtrl.push(z1 * correlation + z2 * L22);
+    }
+    // Post-hoc adjust the paired portions
+    expValues = postHocAdjust(rawExp, meanExp, sdExp);
+    ctrlValues = postHocAdjust(rawCtrl, meanCtrl, sdCtrl);
+    // Fill remaining if arms differ in N
+    if (nExp > nPaired) {
+      expValues = expValues.concat(generateNormal(nExp - nPaired, meanExp, sdExp));
+    }
+    if (nCtrl > nPaired) {
+      ctrlValues = ctrlValues.concat(generateNormal(nCtrl - nPaired, meanCtrl, sdCtrl));
+    }
+  }
+
+  const ipd = [];
+  let pid = 1;
+  for (let i = 0; i < nExp; i++) ipd.push({ patient_id: pid++, arm: 'experimental', value: expValues[i] });
+  for (let i = 0; i < nCtrl; i++) ipd.push({ patient_id: pid++, arm: 'control', value: ctrlValues[i] });
+
+  // Compute reconstructed statistics
+  const rMeanE = expValues.reduce((s, v) => s + v, 0) / nExp;
+  const rSdE = Math.sqrt(expValues.reduce((s, v) => s + (v - rMeanE) ** 2, 0) / (nExp - 1));
+  const rMeanC = ctrlValues.reduce((s, v) => s + v, 0) / nCtrl;
+  const rSdC = Math.sqrt(ctrlValues.reduce((s, v) => s + (v - rMeanC) ** 2, 0) / (nCtrl - 1));
+
+  return {
+    ipd,
+    metrics: {
+      n_exp: nExp, n_ctrl: nCtrl,
+      input_mean_exp: meanExp, input_sd_exp: sdExp,
+      input_mean_ctrl: meanCtrl, input_sd_ctrl: sdCtrl,
+      recon_mean_exp: rMeanE, recon_sd_exp: rSdE,
+      recon_mean_ctrl: rMeanC, recon_sd_ctrl: rSdC,
+      mean_diff_pct_exp: Math.abs(rMeanE - meanExp) / (Math.abs(meanExp) || 1) * 100,
+      sd_diff_pct_exp: Math.abs(rSdE - sdExp) / sdExp * 100,
+      mean_diff_pct_ctrl: Math.abs(rMeanC - meanCtrl) / (Math.abs(meanCtrl) || 1) * 100,
+      sd_diff_pct_ctrl: Math.abs(rSdC - sdCtrl) / sdCtrl * 100,
+    },
+  };
+}
+
+/* ================================================================
+   KM RECONSTRUCTION — Guyot Algorithm (Guyot et al. BMC MRM 2012)
+   ================================================================ */
+
+function parseCoordinates(text) {
+  /** Parse "time, survival" lines. Returns sorted array of {t, s}. */
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l && !l.match(/^[a-zA-Z]/));
+  const coords = lines.map(l => {
+    const parts = l.split(/[,\t\s]+/).map(Number);
+    if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+    return { t: parts[0], s: parts[1] };
+  }).filter(Boolean);
+  coords.sort((a, b) => a.t - b.t);
+  return coords;
+}
+
+function parseAtRisk(text) {
+  /** Parse "time, nrisk_exp, nrisk_ctrl" lines. Returns sorted array of {t, nExp, nCtrl}. */
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l && !l.match(/^[a-zA-Z]/));
+  return lines.map(l => {
+    const parts = l.split(/[,\t\s]+/).map(Number);
+    if (parts.length < 3 || parts.some(isNaN)) return null;
+    return { t: parts[0], nExp: parts[1], nCtrl: parts[2] };
+  }).filter(Boolean).sort((a, b) => a.t - b.t);
+}
+
+function interpolateSurvival(coords, times) {
+  /** Piecewise linear interpolation of survival at given times. */
+  return times.map(t => {
+    if (t <= coords[0].t) return coords[0].s;
+    if (t >= coords[coords.length - 1].t) return coords[coords.length - 1].s;
+    for (let i = 0; i < coords.length - 1; i++) {
+      if (t >= coords[i].t && t <= coords[i + 1].t) {
+        const frac = (coords[i + 1].t - coords[i].t) === 0 ? 0
+          : (t - coords[i].t) / (coords[i + 1].t - coords[i].t);
+        return coords[i].s + frac * (coords[i + 1].s - coords[i].s);
+      }
+    }
+    return coords[coords.length - 1].s;
+  });
+}
+
+function guyotReconstruct(coords, atRiskTimes, atRiskN, seed) {
+  /**
+   * Reconstruct pseudo-IPD from one arm using the Guyot algorithm.
+   * coords:       [{t, s}]  digitised KM coordinates (will be shallow-copied)
+   * atRiskTimes:  [t0, t1, ...]  at-risk reporting times
+   * atRiskN:      [n0, n1, ...]  at-risk numbers at each time
+   * Returns: { patients: [{time, event}], warnings: [] }
+   */
+  const rng = makeRng(seed);
+  const warnings = [];
+
+  // Work on a copy to avoid mutating caller's data
+  coords = coords.map(c => ({ t: c.t, s: c.s }));
+
+  // Enforce monotonicity (survival can only decrease)
+  for (let i = 1; i < coords.length; i++) {
+    if (coords[i].s > coords[i - 1].s) {
+      warnings.push('Monotonicity violation at t=' + coords[i].t + ': S=' + coords[i].s + ' > ' + coords[i - 1].s + '. Clamped.');
+      coords[i].s = coords[i - 1].s;
+    }
+  }
+
+  // Ensure curve starts at S=1.0 at t=0
+  if (coords[0].t > 0 || coords[0].s < 1) {
+    coords.unshift({ t: 0, s: 1.0 });
+  }
+
+  // Interpolate survival at at-risk times
+  const survAtRisk = interpolateSurvival(coords, atRiskTimes);
+
+  const patients = [];
+
+  for (let j = 0; j < atRiskTimes.length - 1; j++) {
+    const nj = atRiskN[j];
+    const njNext = atRiskN[j + 1];
+    const sj = survAtRisk[j];
+    const sjNext = survAtRisk[j + 1];
+    const tStart = atRiskTimes[j];
+    const tEnd = atRiskTimes[j + 1];
+
+    if (nj === 0 || sj === 0) {
+      warnings.push('Zero at-risk or survival at t=' + tStart + '. Skipping interval.');
+      continue;
+    }
+
+    const hj = 1 - sjNext / sj;  // interval hazard
+    let dj = Math.round(nj * hj); // events in interval
+    dj = Math.max(0, dj);
+    let cj = nj - dj - njNext;    // censored in interval
+    cj = Math.max(0, cj);
+
+    // Distribute events uniformly within the interval
+    for (let e = 0; e < dj; e++) {
+      const time = tStart + rng.next() * (tEnd - tStart);
+      patients.push({ time: time, event: 1 });
+    }
+    // Distribute censorings uniformly within the interval
+    for (let c = 0; c < cj; c++) {
+      const time = tStart + rng.next() * (tEnd - tStart);
+      patients.push({ time: time, event: 0 });
+    }
+  }
+
+  // Last interval: censor all remaining at last reported time
+  const lastIdx = atRiskTimes.length - 1;
+  const remaining = atRiskN[lastIdx];
+  const lastTime = atRiskTimes[lastIdx];
+  for (let i = 0; i < remaining; i++) {
+    patients.push({ time: lastTime, event: 0 });
+  }
+
+  patients.sort((a, b) => a.time - b.time);
+
+  // Check total N vs input
+  const totalReconstructed = patients.length;
+  const totalInput = atRiskN[0];
+  if (Math.abs(totalReconstructed - totalInput) > 2) {
+    warnings.push('Reconstructed N=' + totalReconstructed + ' vs input N=' + totalInput + '. Difference > 2.');
+  }
+
+  return { patients: patients, warnings: warnings };
+}
+
+function reconstructKM(coordsExp, coordsCtrl, atRisk, seed) {
+  /** Full two-arm KM reconstruction. */
+  const atRiskTimes = atRisk.map(r => r.t);
+  const atRiskNExp = atRisk.map(r => r.nExp);
+  const atRiskNCtrl = atRisk.map(r => r.nCtrl);
+
+  const expResult = guyotReconstruct(coordsExp, atRiskTimes, atRiskNExp, seed);
+  const ctrlResult = guyotReconstruct(coordsCtrl, atRiskTimes, atRiskNCtrl, seed + 1);
+
+  const ipd = [];
+  let pid = 1;
+  for (const p of expResult.patients) {
+    ipd.push({ patient_id: pid++, arm: 'experimental', time: p.time, event: p.event });
+  }
+  for (const p of ctrlResult.patients) {
+    ipd.push({ patient_id: pid++, arm: 'control', time: p.time, event: p.event });
+  }
+
+  // Compute reconstructed KM curves for validation overlay
+  const kmExp = computeKMCurve(expResult.patients);
+  const kmCtrl = computeKMCurve(ctrlResult.patients);
+
+  // Compute HR via incidence rate ratio (Nelson-Aalen-style)
+  const hr = computeLogRankHR(ipd);
+
+  // Compute median survival from reconstructed KM
+  const medianExp = computeMedianSurvival(kmExp);
+  const medianCtrl = computeMedianSurvival(kmCtrl);
+
+  const nEventsExp = expResult.patients.filter(p => p.event === 1).length;
+  const nEventsCtrl = ctrlResult.patients.filter(p => p.event === 1).length;
+
+  return {
+    ipd: ipd,
+    kmExp: kmExp,
+    kmCtrl: kmCtrl,
+    hr: hr,
+    medianExp: medianExp,
+    medianCtrl: medianCtrl,
+    nExp: expResult.patients.length,
+    nCtrl: ctrlResult.patients.length,
+    nEventsExp: nEventsExp,
+    nEventsCtrl: nEventsCtrl,
+    warnings: [
+      ...expResult.warnings.map(w => '[Exp] ' + w),
+      ...ctrlResult.warnings.map(w => '[Ctrl] ' + w),
+    ],
+  };
+}
+
+function computeKMCurve(patients) {
+  /** Compute step-function KM estimate from individual-level data. */
+  const sorted = [...patients].sort((a, b) => a.time - b.time);
+  const steps = [{ t: 0, s: 1.0 }];
+  let nRisk = sorted.length;
+  let surv = 1.0;
+  let i = 0;
+  while (i < sorted.length) {
+    const t = sorted[i].time;
+    let d = 0, c = 0;
+    // Count all events and censorings at the same time point
+    while (i < sorted.length && sorted[i].time === t) {
+      if (sorted[i].event === 1) d++;
+      else c++;
+      i++;
+    }
+    if (d > 0 && nRisk > 0) {
+      surv *= (1 - d / nRisk);
+      steps.push({ t: t, s: surv });
+    }
+    nRisk -= (d + c);
+  }
+  return steps;
+}
+
+function computeLogRankHR(ipd) {
+  /** Simplified HR estimate: ratio of incidence rates (events / total person-time). */
+  const exp = ipd.filter(p => p.arm === 'experimental');
+  const ctrl = ipd.filter(p => p.arm === 'control');
+  const dExp = exp.filter(p => p.event === 1).length;
+  const dCtrl = ctrl.filter(p => p.event === 1).length;
+  const tExp = exp.reduce((s, p) => s + p.time, 0);
+  const tCtrl = ctrl.reduce((s, p) => s + p.time, 0);
+  if (tExp === 0 || tCtrl === 0 || dCtrl === 0) return null;
+  return (dExp / tExp) / (dCtrl / tCtrl);
+}
+
+function computeMedianSurvival(kmCurve) {
+  /** Find the first time at which survival drops to <= 0.5. */
+  for (let i = 0; i < kmCurve.length; i++) {
+    if (kmCurve[i].s <= 0.5) return kmCurve[i].t;
+  }
+  return null; // median not reached
+}
+
+/* ================================================================
+   VALIDATION PANEL — stub (full rendering in Task 6)
+   ================================================================ */
+
+function renderValidation() {
+  /* Task 6 will implement the full validation charts, metrics table,
+     and summary table rendering. For now, show a basic summary. */
+  if (!STATE.lastIPD) return;
+  document.getElementById('validation-empty').classList.add('hidden');
+  const content = document.getElementById('validation-content');
+  content.classList.remove('hidden');
+
+  const m = STATE.lastMetrics;
+  const mode = STATE.lastMode;
+
+  // --- Chart ---
+  const chartDiv = document.getElementById('validation-chart');
+  if (mode === 'km') {
+    renderKMChart(chartDiv, m);
+  } else if (mode === 'binary') {
+    renderBinaryChart(chartDiv, m);
+  } else if (mode === 'continuous') {
+    renderContinuousChart(chartDiv, m);
+  }
+
+  // --- Metrics table ---
+  renderMetricsTable(mode, m);
+
+  // --- Summary table ---
+  renderSummaryTable(mode, m);
+}
+
+function trafficLight(value, goodThresh, okThresh) {
+  if (value <= goodThresh) return '<span class="badge-good">Good</span>';
+  if (value <= okThresh) return '<span class="badge-ok">Acceptable</span>';
+  return '<span class="badge-poor">Poor</span>';
+}
+
+function renderKMChart(div, m) {
+  const input = STATE.lastInput;
+  if (typeof Plotly === 'undefined') { div.innerHTML = '<p>Plotly not loaded (offline?). Chart unavailable.</p>'; return; }
+  const traces = [
+    { x: input.coordsExp.map(c => c.t), y: input.coordsExp.map(c => c.s),
+      mode: 'markers', name: 'Original (Exp)', marker: { color: '#2563eb', size: 6 } },
+    { x: m.kmExp.map(c => c.t), y: m.kmExp.map(c => c.s),
+      mode: 'lines', name: 'Reconstructed (Exp)', line: { color: '#dc2626', shape: 'hv' } },
+    { x: input.coordsCtrl.map(c => c.t), y: input.coordsCtrl.map(c => c.s),
+      mode: 'markers', name: 'Original (Ctrl)', marker: { color: '#60a5fa', size: 6 } },
+    { x: m.kmCtrl.map(c => c.t), y: m.kmCtrl.map(c => c.s),
+      mode: 'lines', name: 'Reconstructed (Ctrl)', line: { color: '#f97316', shape: 'hv' } },
+  ];
+  Plotly.newPlot(div, traces, {
+    title: 'KM Reconstruction: Original vs Reconstructed',
+    xaxis: { title: 'Time' },
+    yaxis: { title: 'Survival Probability', range: [0, 1.05] },
+    legend: { x: 0.7, y: 0.95 },
+    margin: { t: 40 },
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+  }, { responsive: true });
+}
+
+function renderBinaryChart(div, m) {
+  if (typeof Plotly === 'undefined') { div.innerHTML = '<p>Plotly not loaded (offline?). Chart unavailable.</p>'; return; }
+  Plotly.newPlot(div, [
+    { x: ['Events (Exp)', 'Non-events (Exp)', 'Events (Ctrl)', 'Non-events (Ctrl)'],
+      y: [m.events_exp, m.n_exp - m.events_exp, m.events_ctrl, m.n_ctrl - m.events_ctrl],
+      type: 'bar', name: 'Input', marker: { color: '#2563eb' } },
+    { x: ['Events (Exp)', 'Non-events (Exp)', 'Events (Ctrl)', 'Non-events (Ctrl)'],
+      y: [m.events_exp, m.n_exp - m.events_exp, m.events_ctrl, m.n_ctrl - m.events_ctrl],
+      type: 'bar', name: 'Reconstructed', marker: { color: '#16a34a' } },
+  ], {
+    title: 'Binary: Input vs Reconstructed (Exact Match)',
+    barmode: 'group',
+    margin: { t: 40 },
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+  }, { responsive: true });
+}
+
+function renderContinuousChart(div, m) {
+  if (typeof Plotly === 'undefined') { div.innerHTML = '<p>Plotly not loaded (offline?). Chart unavailable.</p>'; return; }
+  const expVals = STATE.lastIPD.filter(p => p.arm === 'experimental').map(p => p.value);
+  const ctrlVals = STATE.lastIPD.filter(p => p.arm === 'control').map(p => p.value);
+  Plotly.newPlot(div, [
+    { x: expVals, type: 'histogram', name: 'Exp (simulated)', opacity: 0.6, marker: { color: '#2563eb' } },
+    { x: ctrlVals, type: 'histogram', name: 'Ctrl (simulated)', opacity: 0.6, marker: { color: '#dc2626' } },
+  ], {
+    title: 'Continuous: Distribution of Simulated Values',
+    barmode: 'overlay',
+    margin: { t: 40 },
+    xaxis: { title: 'Value' },
+    yaxis: { title: 'Count' },
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+  }, { responsive: true });
+}
+
+function renderMetricsTable(mode, m) {
+  const tbody = document.querySelector('#metrics-table tbody');
+  let rows = '<tr><th>Metric</th><th>Value</th><th>Rating</th></tr>';
+  if (mode === 'km') {
+    rows += '<tr><td>RMSE (Exp)</td><td>' + m.rmse_exp.toFixed(4) + '</td><td>' + trafficLight(m.rmse_exp, 0.02, 0.05) + '</td></tr>';
+    rows += '<tr><td>RMSE (Ctrl)</td><td>' + m.rmse_ctrl.toFixed(4) + '</td><td>' + trafficLight(m.rmse_ctrl, 0.02, 0.05) + '</td></tr>';
+    rows += '<tr><td>Max Error (Exp)</td><td>' + m.max_err_exp.toFixed(4) + '</td><td>' + trafficLight(m.max_err_exp, 0.05, 0.10) + '</td></tr>';
+    rows += '<tr><td>Max Error (Ctrl)</td><td>' + m.max_err_ctrl.toFixed(4) + '</td><td>' + trafficLight(m.max_err_ctrl, 0.05, 0.10) + '</td></tr>';
+    if (m.pub_median_exp != null && m.median_exp != null) {
+      const pct = Math.abs(m.median_exp - m.pub_median_exp) / m.pub_median_exp * 100;
+      rows += '<tr><td>Median Surv Exp (recon vs pub)</td><td>' + m.median_exp.toFixed(1) + ' vs ' + m.pub_median_exp + '</td><td>' + trafficLight(pct, 5, 10) + '</td></tr>';
+    }
+    if (m.pub_hr != null && m.hr != null) {
+      const pct = Math.abs(m.hr - m.pub_hr) / m.pub_hr * 100;
+      rows += '<tr><td>HR (recon vs pub)</td><td>' + m.hr.toFixed(3) + ' vs ' + m.pub_hr + '</td><td>' + trafficLight(pct, 5, 10) + '</td></tr>';
+    }
+  } else if (mode === 'binary') {
+    rows += '<tr><td>Marginals Match</td><td>Exact</td><td><span class="badge-good">Good</span></td></tr>';
+  } else if (mode === 'continuous') {
+    rows += '<tr><td>Mean Diff % (Exp)</td><td>' + m.mean_diff_pct_exp.toFixed(3) + '%</td><td>' + trafficLight(m.mean_diff_pct_exp, 1, 2) + '</td></tr>';
+    rows += '<tr><td>SD Diff % (Exp)</td><td>' + m.sd_diff_pct_exp.toFixed(3) + '%</td><td>' + trafficLight(m.sd_diff_pct_exp, 1, 5) + '</td></tr>';
+    rows += '<tr><td>Mean Diff % (Ctrl)</td><td>' + m.mean_diff_pct_ctrl.toFixed(3) + '%</td><td>' + trafficLight(m.mean_diff_pct_ctrl, 1, 2) + '</td></tr>';
+    rows += '<tr><td>SD Diff % (Ctrl)</td><td>' + m.sd_diff_pct_ctrl.toFixed(3) + '%</td><td>' + trafficLight(m.sd_diff_pct_ctrl, 1, 5) + '</td></tr>';
+  }
+  tbody.innerHTML = rows;
+}
+
+function renderSummaryTable(mode, m) {
+  const tbody = document.querySelector('#summary-table tbody');
+  let rows = '<tr><th>Statistic</th><th>Experimental</th><th>Control</th></tr>';
+  rows += '<tr><td>N</td><td>' + m.n_exp + '</td><td>' + m.n_ctrl + '</td></tr>';
+  if (mode === 'km') {
+    rows += '<tr><td>Events</td><td>' + m.events_exp + '</td><td>' + m.events_ctrl + '</td></tr>';
+    rows += '<tr><td>Median Survival</td><td>' + (m.median_exp != null ? m.median_exp.toFixed(1) : 'NR') + '</td><td>' + (m.median_ctrl != null ? m.median_ctrl.toFixed(1) : 'NR') + '</td></tr>';
+    rows += '<tr><td>HR</td><td colspan="2">' + (m.hr != null ? m.hr.toFixed(3) : 'N/A') + '</td></tr>';
+  } else if (mode === 'binary') {
+    rows += '<tr><td>Events</td><td>' + m.events_exp + '</td><td>' + m.events_ctrl + '</td></tr>';
+    rows += '<tr><td>Event Rate</td><td>' + (m.event_rate_exp * 100).toFixed(1) + '%</td><td>' + (m.event_rate_ctrl * 100).toFixed(1) + '%</td></tr>';
+  } else if (mode === 'continuous') {
+    rows += '<tr><td>Mean (input)</td><td>' + m.input_mean_exp + '</td><td>' + m.input_mean_ctrl + '</td></tr>';
+    rows += '<tr><td>Mean (recon)</td><td>' + m.recon_mean_exp.toFixed(4) + '</td><td>' + m.recon_mean_ctrl.toFixed(4) + '</td></tr>';
+    rows += '<tr><td>SD (input)</td><td>' + m.input_sd_exp + '</td><td>' + m.input_sd_ctrl + '</td></tr>';
+    rows += '<tr><td>SD (recon)</td><td>' + m.recon_sd_exp.toFixed(4) + '</td><td>' + m.recon_sd_ctrl.toFixed(4) + '</td></tr>';
+  }
+  tbody.innerHTML = rows;
+}
+
+/* ================================================================
+   EXPORT — placeholder (full implementation in Task 7)
+   ================================================================ */
+
+// Export button handlers — stubs, will be replaced in Task 7
+document.getElementById('export-csv').addEventListener('click', () => {
+  if (!STATE.lastIPD) return;
+  alert('Export CSV: will be implemented in Task 7. ' + STATE.lastIPD.length + ' patients ready.');
+});
+document.getElementById('export-json').addEventListener('click', () => {
+  if (!STATE.lastIPD) return;
+  alert('Export JSON: will be implemented in Task 7. ' + STATE.lastIPD.length + ' patients ready.');
+});
+document.getElementById('export-r').addEventListener('click', () => {
+  if (!STATE.lastIPD) return;
+  alert('Export R Script: will be implemented in Task 7. ' + STATE.lastIPD.length + ' patients ready.');
+});
+
+/* ================================================================
+   EXAMPLES — placeholder (full data in Task 8)
+   ================================================================ */
+
+// Example dropdowns — stubs, will be populated with real data in Task 8
+document.getElementById('km-example').addEventListener('change', function() {
+  if (!this.value) return;
+  // Task 8: load pre-digitised example data into the form fields
+  alert('Example "' + this.value + '" will be loaded in Task 8.');
+  this.value = '';
+});
+
+document.getElementById('bin-example').addEventListener('change', function() {
+  if (!this.value) return;
+  alert('Example "' + this.value + '" will be loaded in Task 8.');
+  this.value = '';
+});
+
+document.getElementById('cont-example').addEventListener('change', function() {
+  if (!this.value) return;
+  alert('Example "' + this.value + '" will be loaded in Task 8.');
+  this.value = '';
+});
+
+/* ================================================================
+   UI HANDLERS — Binary
+   ================================================================ */
+
+document.getElementById('bin-run').addEventListener('click', function() {
+  var ee = parseInt(document.getElementById('bin-events-exp').value);
+  var ne = parseInt(document.getElementById('bin-n-exp').value);
+  var ec = parseInt(document.getElementById('bin-events-ctrl').value);
+  var nc = parseInt(document.getElementById('bin-n-ctrl').value);
+  var seed = parseInt(document.getElementById('bin-seed').value) || 42;
+  var studyId = document.getElementById('bin-study-id').value || 'BinaryStudy';
+  var warn = document.getElementById('bin-warnings');
+  warn.innerHTML = '';
+
+  if ([ee, ne, ec, nc].some(function(v) { return isNaN(v); })) {
+    warn.innerHTML = '<div class="warning">All four fields are required.</div>';
+    return;
+  }
+  try {
+    var result = simulateBinary(ee, ne, ec, nc, seed);
+    STATE.lastMode = 'binary';
+    STATE.lastIPD = result.ipd;
+    STATE.lastMetrics = result.metrics;
+    STATE.lastMeta = { study_id: studyId, seed: seed, outcome_type: 'binary', algorithm: 'shuffle' };
+    STATE.lastInput = { events_exp: ee, n_exp: ne, events_ctrl: ec, n_ctrl: nc };
+
+    var box = document.getElementById('bin-result');
+    box.classList.remove('hidden');
+    box.innerHTML = '<p><strong>' + result.ipd.length + ' patients generated</strong> (' + ne + ' exp + ' + nc + ' ctrl). '
+      + 'Marginals exact: ' + result.metrics.marginals_exact + '. '
+      + '<button class="btn btn-secondary" onclick="showValidation()">View Validation &rarr;</button></p>';
+  } catch (e) {
+    warn.innerHTML = '<div class="warning">' + escapeHtml(e.message) + '</div>';
+  }
+});
+
+document.getElementById('bin-regenerate').addEventListener('click', function() {
+  var el = document.getElementById('bin-seed');
+  el.value = (parseInt(el.value) || 42) + 1;
+  document.getElementById('bin-run').click();
+});
+
+/* ================================================================
+   UI HANDLERS — Continuous
+   ================================================================ */
+
+document.getElementById('cont-run').addEventListener('click', function() {
+  var me = parseFloat(document.getElementById('cont-mean-exp').value);
+  var se = parseFloat(document.getElementById('cont-sd-exp').value);
+  var ne = parseInt(document.getElementById('cont-n-exp').value);
+  var mc = parseFloat(document.getElementById('cont-mean-ctrl').value);
+  var sc = parseFloat(document.getElementById('cont-sd-ctrl').value);
+  var nc = parseInt(document.getElementById('cont-n-ctrl').value);
+  var corr = parseFloat(document.getElementById('cont-corr').value) || 0;
+  var seed = parseInt(document.getElementById('cont-seed').value) || 42;
+  var studyId = document.getElementById('cont-study-id').value || 'ContinuousStudy';
+  var warn = document.getElementById('cont-warnings');
+  warn.innerHTML = '';
+
+  if ([me, se, ne, mc, sc, nc].some(function(v) { return isNaN(v); })) {
+    warn.innerHTML = '<div class="warning">All six fields are required.</div>';
+    return;
+  }
+  try {
+    var result = simulateContinuous(me, se, ne, mc, sc, nc, corr, seed);
+    STATE.lastMode = 'continuous';
+    STATE.lastIPD = result.ipd;
+    STATE.lastMetrics = result.metrics;
+    STATE.lastMeta = { study_id: studyId, seed: seed, outcome_type: 'continuous', algorithm: 'box-muller' };
+    STATE.lastInput = { mean_exp: me, sd_exp: se, n_exp: ne, mean_ctrl: mc, sd_ctrl: sc, n_ctrl: nc, correlation: corr };
+
+    var box = document.getElementById('cont-result');
+    box.classList.remove('hidden');
+    box.innerHTML = '<p><strong>' + result.ipd.length + ' patients generated</strong> (' + ne + ' exp + ' + nc + ' ctrl). '
+      + 'Mean diff: ' + result.metrics.mean_diff_pct_exp.toFixed(2) + '% (exp), ' + result.metrics.mean_diff_pct_ctrl.toFixed(2) + '% (ctrl). '
+      + '<button class="btn btn-secondary" onclick="showValidation()">View Validation &rarr;</button></p>';
+  } catch (e) {
+    warn.innerHTML = '<div class="warning">' + escapeHtml(e.message) + '</div>';
+  }
+});
+
+document.getElementById('cont-regenerate').addEventListener('click', function() {
+  var el = document.getElementById('cont-seed');
+  el.value = (parseInt(el.value) || 42) + 1;
+  document.getElementById('cont-run').click();
+});
+
+/* ================================================================
+   UI HANDLERS — KM Reconstruct
+   ================================================================ */
+
+document.getElementById('km-run').addEventListener('click', function() {
+  var coordsExpText = document.getElementById('km-coords-exp').value;
+  var coordsCtrlText = document.getElementById('km-coords-ctrl').value;
+  var atRiskText = document.getElementById('km-atrisk').value;
+  var seed = parseInt(document.getElementById('km-seed').value) || 42;
+  var warn = document.getElementById('km-warnings');
+  warn.innerHTML = '';
+
+  if (!coordsExpText.trim() || !coordsCtrlText.trim() || !atRiskText.trim()) {
+    warn.innerHTML = '<div class="warning">All three fields are required (exp coordinates, ctrl coordinates, at-risk table).</div>';
+    return;
+  }
+
+  var coordsExp = parseCoordinates(coordsExpText);
+  var coordsCtrl = parseCoordinates(coordsCtrlText);
+  var atRisk = parseAtRisk(atRiskText);
+
+  if (coordsExp.length < 2) { warn.innerHTML = '<div class="warning">Need at least 2 coordinate points (experimental).</div>'; return; }
+  if (coordsCtrl.length < 2) { warn.innerHTML = '<div class="warning">Need at least 2 coordinate points (control).</div>'; return; }
+  if (atRisk.length < 2) { warn.innerHTML = '<div class="warning">Need at least 2 at-risk time points.</div>'; return; }
+
+  var result = reconstructKM(coordsExp, coordsCtrl, atRisk, seed);
+
+  // Compute RMSE against original digitised coordinates
+  var reconSurvExp = interpolateSurvival(result.kmExp, coordsExp.map(function(c) { return c.t; }));
+  var rmseExp = Math.sqrt(coordsExp.reduce(function(s, c, i) { return s + (c.s - reconSurvExp[i]) ** 2; }, 0) / coordsExp.length);
+  var maxErrExp = Math.max.apply(null, coordsExp.map(function(c, i) { return Math.abs(c.s - reconSurvExp[i]); }));
+
+  var reconSurvCtrl = interpolateSurvival(result.kmCtrl, coordsCtrl.map(function(c) { return c.t; }));
+  var rmseCtrl = Math.sqrt(coordsCtrl.reduce(function(s, c, i) { return s + (c.s - reconSurvCtrl[i]) ** 2; }, 0) / coordsCtrl.length);
+  var maxErrCtrl = Math.max.apply(null, coordsCtrl.map(function(c, i) { return Math.abs(c.s - reconSurvCtrl[i]); }));
+
+  // Published values for comparison (optional)
+  var pubMedianExp = parseFloat(document.getElementById('km-median-exp').value);
+  pubMedianExp = isFinite(pubMedianExp) ? pubMedianExp : null;
+  var pubMedianCtrl = parseFloat(document.getElementById('km-median-ctrl').value);
+  pubMedianCtrl = isFinite(pubMedianCtrl) ? pubMedianCtrl : null;
+  var pubHR = parseFloat(document.getElementById('km-hr').value);
+  pubHR = isFinite(pubHR) ? pubHR : null;
+
+  STATE.lastMode = 'km';
+  STATE.lastIPD = result.ipd;
+  STATE.lastMeta = { study_id: 'KMStudy', seed: seed, outcome_type: 'time-to-event', algorithm: 'guyot-2012' };
+  STATE.lastInput = { coordsExp: coordsExp, coordsCtrl: coordsCtrl, atRisk: atRisk, pubMedianExp: pubMedianExp, pubMedianCtrl: pubMedianCtrl, pubHR: pubHR };
+  STATE.lastMetrics = {
+    rmse_exp: rmseExp, rmse_ctrl: rmseCtrl,
+    max_err_exp: maxErrExp, max_err_ctrl: maxErrCtrl,
+    median_exp: result.medianExp, median_ctrl: result.medianCtrl,
+    hr: result.hr,
+    pub_median_exp: pubMedianExp, pub_median_ctrl: pubMedianCtrl, pub_hr: pubHR,
+    n_exp: result.nExp, n_ctrl: result.nCtrl,
+    events_exp: result.nEventsExp, events_ctrl: result.nEventsCtrl,
+    kmExp: result.kmExp, kmCtrl: result.kmCtrl,
+  };
+
+  // Show any warnings
+  if (result.warnings.length > 0) {
+    warn.innerHTML = result.warnings.map(function(w) { return '<div class="warning">' + escapeHtml(w) + '</div>'; }).join('');
+  }
+
+  var box = document.getElementById('km-result');
+  box.classList.remove('hidden');
+  box.innerHTML = '<p><strong>' + result.ipd.length + ' patients reconstructed</strong> '
+    + '(' + result.nExp + ' exp, ' + result.nCtrl + ' ctrl). '
+    + 'RMSE: ' + rmseExp.toFixed(4) + ' (exp), ' + rmseCtrl.toFixed(4) + ' (ctrl). '
+    + 'HR: ' + (result.hr != null ? result.hr.toFixed(3) : 'N/A') + '. '
+    + '<button class="btn btn-secondary" onclick="showValidation()">View Validation &rarr;</button></p>';
+});
+
+document.getElementById('km-regenerate').addEventListener('click', function() {
+  var el = document.getElementById('km-seed');
+  el.value = (parseInt(el.value) || 42) + 1;
+  document.getElementById('km-run').click();
+});
+
+document.getElementById('km-load-json').addEventListener('click', function() {
+  document.getElementById('km-json-file').click();
+});
+
+document.getElementById('km-json-file').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      var data = JSON.parse(ev.target.result);
+      // Expect KMcurve format: { experimental: {coords}, control: {coords}, at_risk: [...] }
+      if (data.experimental && data.experimental.coords) {
+        document.getElementById('km-coords-exp').value = data.experimental.coords.map(function(c) {
+          return c.time + ', ' + c.survival;
+        }).join('\n');
+      }
+      if (data.control && data.control.coords) {
+        document.getElementById('km-coords-ctrl').value = data.control.coords.map(function(c) {
+          return c.time + ', ' + c.survival;
+        }).join('\n');
+      }
+      if (data.at_risk) {
+        document.getElementById('km-atrisk').value = data.at_risk.map(function(r) {
+          return r.time + ', ' + r.n_exp + ', ' + r.n_ctrl;
+        }).join('\n');
+      }
+    } catch (err) {
+      document.getElementById('km-warnings').innerHTML = '<div class="warning">Invalid JSON: ' + escapeHtml(err.message) + '</div>';
+    }
+  };
+  reader.readAsText(file);
+});
+
+/* ================================================================
+   SHARED UTILITIES
+   ================================================================ */
+
+function showValidation() {
+  document.getElementById('btn-validation').click();
+  renderValidation();
+}
+
+function escapeHtml(str) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
+/* ================================================================
+   LOCALSTORAGE PERSISTENCE — placeholder (Task 9)
+   ================================================================ */
+
+// Task 9: save/restore tab inputs to ipdsim_draft localStorage key
+
+</script>
+</body>
+</html>
