@@ -132,7 +132,7 @@
         <button class="btn btn-primary" id="km-run">Reconstruct IPD</button>
         <button class="btn btn-secondary" id="km-load-json">Load from KMcurve JSON</button>
         <input type="file" id="km-json-file" accept=".json" class="hidden">
-        <select id="km-example" class="btn btn-secondary" style="padding:10px 12px">
+        <select id="km-example" class="btn btn-secondary" style="padding:10px 12px" aria-label="Load KM reconstruction example">
           <option value="">Load Example...</option>
           <!-- Examples will be populated in Task 8 -->
           <option value="dapahf">DAPA-HF</option>
@@ -168,7 +168,7 @@
 
       <div class="btn-row">
         <button class="btn btn-primary" id="bin-run">Simulate IPD</button>
-        <select id="bin-example" class="btn btn-secondary" style="padding:10px 12px">
+        <select id="bin-example" class="btn btn-secondary" style="padding:10px 12px" aria-label="Load binary outcome example">
           <option value="">Load Example...</option>
           <!-- Examples will be populated in Task 8 -->
           <option value="sglt2i">SGLT2i HF Hospitalization</option>
@@ -210,7 +210,7 @@
 
       <div class="btn-row">
         <button class="btn btn-primary" id="cont-run">Simulate IPD</button>
-        <select id="cont-example" class="btn btn-secondary" style="padding:10px 12px">
+        <select id="cont-example" class="btn btn-secondary" style="padding:10px 12px" aria-label="Load continuous outcome example">
           <option value="">Load Example...</option>
           <!-- Examples will be populated in Task 8 -->
           <option value="bp">Systolic BP Reduction</option>
@@ -231,9 +231,9 @@
       <div id="validation-content" class="hidden">
         <div id="validation-chart"></div>
         <h3 style="margin-top:20px">Agreement Metrics</h3>
-        <table class="metrics-table" id="metrics-table"><tbody></tbody></table>
+        <table class="metrics-table" id="metrics-table"><thead></thead><tbody></tbody></table>
         <h3 style="margin-top:20px">Pseudo-IPD Summary</h3>
-        <table class="summary-table" id="summary-table"><tbody></tbody></table>
+        <table class="summary-table" id="summary-table"><thead></thead><tbody></tbody></table>
         <div class="export-section">
           <h3>Export</h3>
           <div class="btn-row">
@@ -345,9 +345,19 @@ function makeRng(seed) {
       return [r * Math.cos(2 * Math.PI * u2), r * Math.sin(2 * Math.PI * u2)];
     },
 
-    /** Single standard normal deviate */
+    _gaussianSpare: null,
+    _hasSpare: false,
+
+    /** Single standard normal deviate (caches Box-Muller spare) */
     nextGaussian() {
-      return this.nextGaussianPair()[0];
+      if (this._hasSpare) {
+        this._hasSpare = false;
+        return this._gaussianSpare;
+      }
+      const pair = this.nextGaussianPair();
+      this._gaussianSpare = pair[1];
+      this._hasSpare = true;
+      return pair[0];
     },
 
     /** Fisher-Yates shuffle (in-place) */
@@ -555,17 +565,18 @@ function guyotReconstruct(coords, atRiskTimes, atRiskN, seed) {
   // Work on a copy to avoid mutating caller's data
   coords = coords.map(c => ({ t: c.t, s: c.s }));
 
+  // Ensure curve starts at S=1.0 at t=0 (before monotonicity check so
+  // the first user coordinate is also checked against S=1.0)
+  if (coords[0].t > 0 || coords[0].s < 1) {
+    coords.unshift({ t: 0, s: 1.0 });
+  }
+
   // Enforce monotonicity (survival can only decrease)
   for (let i = 1; i < coords.length; i++) {
     if (coords[i].s > coords[i - 1].s) {
       warnings.push('Monotonicity violation at t=' + coords[i].t + ': S=' + coords[i].s + ' > ' + coords[i - 1].s + '. Clamped.');
       coords[i].s = coords[i - 1].s;
     }
-  }
-
-  // Ensure curve starts at S=1.0 at t=0
-  if (coords[0].t > 0 || coords[0].s < 1) {
-    coords.unshift({ t: 0, s: 1.0 });
   }
 
   // Interpolate survival at at-risk times
@@ -846,8 +857,10 @@ function renderContinuousChart(div, m) {
 }
 
 function renderMetricsTable(mode, m) {
+  var thead = document.querySelector('#metrics-table thead');
+  thead.innerHTML = '<tr><th>Metric</th><th>Value</th><th>Rating</th></tr>';
   const tbody = document.querySelector('#metrics-table tbody');
-  let rows = '<tr><th>Metric</th><th>Value</th><th>Rating</th></tr>';
+  let rows = '';
   if (mode === 'km') {
     rows += '<tr><td>RMSE (Exp)</td><td>' + m.rmse_exp.toFixed(4) + '</td><td>' + trafficLight(m.rmse_exp, 0.02, 0.05) + '</td></tr>';
     rows += '<tr><td>RMSE (Ctrl)</td><td>' + m.rmse_ctrl.toFixed(4) + '</td><td>' + trafficLight(m.rmse_ctrl, 0.02, 0.05) + '</td></tr>';
@@ -873,8 +886,10 @@ function renderMetricsTable(mode, m) {
 }
 
 function renderSummaryTable(mode, m) {
+  var thead = document.querySelector('#summary-table thead');
+  thead.innerHTML = '<tr><th>Statistic</th><th>Experimental</th><th>Control</th></tr>';
   const tbody = document.querySelector('#summary-table tbody');
-  let rows = '<tr><th>Statistic</th><th>Experimental</th><th>Control</th></tr>';
+  let rows = '';
   rows += '<tr><td>N</td><td>' + m.n_exp + '</td><td>' + m.n_ctrl + '</td></tr>';
   if (mode === 'km') {
     rows += '<tr><td>Events</td><td>' + m.events_exp + '</td><td>' + m.events_ctrl + '</td></tr>';
@@ -909,6 +924,7 @@ function downloadBlob(content, filename, mimeType) {
   var a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1070,11 +1086,11 @@ document.getElementById('cont-example').addEventListener('change', function(e) {
    ================================================================ */
 
 document.getElementById('bin-run').addEventListener('click', function() {
-  var ee = parseInt(document.getElementById('bin-events-exp').value);
-  var ne = parseInt(document.getElementById('bin-n-exp').value);
-  var ec = parseInt(document.getElementById('bin-events-ctrl').value);
-  var nc = parseInt(document.getElementById('bin-n-ctrl').value);
-  var seed = parseInt(document.getElementById('bin-seed').value) || 42;
+  var ee = parseInt(document.getElementById('bin-events-exp').value, 10);
+  var ne = parseInt(document.getElementById('bin-n-exp').value, 10);
+  var ec = parseInt(document.getElementById('bin-events-ctrl').value, 10);
+  var nc = parseInt(document.getElementById('bin-n-ctrl').value, 10);
+  var seed = parseInt(document.getElementById('bin-seed').value, 10) || 42;
   var studyId = document.getElementById('bin-study-id').value || 'BinaryStudy';
   var warn = document.getElementById('bin-warnings');
   warn.innerHTML = '';
@@ -1103,7 +1119,7 @@ document.getElementById('bin-run').addEventListener('click', function() {
 
 document.getElementById('bin-regenerate').addEventListener('click', function() {
   var el = document.getElementById('bin-seed');
-  el.value = (parseInt(el.value) || 42) + 1;
+  el.value = (parseInt(el.value, 10) || 42) + 1;
   document.getElementById('bin-run').click();
 });
 
@@ -1114,12 +1130,12 @@ document.getElementById('bin-regenerate').addEventListener('click', function() {
 document.getElementById('cont-run').addEventListener('click', function() {
   var me = parseFloat(document.getElementById('cont-mean-exp').value);
   var se = parseFloat(document.getElementById('cont-sd-exp').value);
-  var ne = parseInt(document.getElementById('cont-n-exp').value);
+  var ne = parseInt(document.getElementById('cont-n-exp').value, 10);
   var mc = parseFloat(document.getElementById('cont-mean-ctrl').value);
   var sc = parseFloat(document.getElementById('cont-sd-ctrl').value);
-  var nc = parseInt(document.getElementById('cont-n-ctrl').value);
+  var nc = parseInt(document.getElementById('cont-n-ctrl').value, 10);
   var corr = parseFloat(document.getElementById('cont-corr').value) || 0;
-  var seed = parseInt(document.getElementById('cont-seed').value) || 42;
+  var seed = parseInt(document.getElementById('cont-seed').value, 10) || 42;
   var studyId = document.getElementById('cont-study-id').value || 'ContinuousStudy';
   var warn = document.getElementById('cont-warnings');
   warn.innerHTML = '';
@@ -1151,7 +1167,7 @@ document.getElementById('cont-run').addEventListener('click', function() {
 
 document.getElementById('cont-regenerate').addEventListener('click', function() {
   var el = document.getElementById('cont-seed');
-  el.value = (parseInt(el.value) || 42) + 1;
+  el.value = (parseInt(el.value, 10) || 42) + 1;
   document.getElementById('cont-run').click();
 });
 
@@ -1163,7 +1179,7 @@ document.getElementById('km-run').addEventListener('click', function() {
   var coordsExpText = document.getElementById('km-coords-exp').value;
   var coordsCtrlText = document.getElementById('km-coords-ctrl').value;
   var atRiskText = document.getElementById('km-atrisk').value;
-  var seed = parseInt(document.getElementById('km-seed').value) || 42;
+  var seed = parseInt(document.getElementById('km-seed').value, 10) || 42;
   var warn = document.getElementById('km-warnings');
   warn.innerHTML = '';
 
@@ -1230,7 +1246,7 @@ document.getElementById('km-run').addEventListener('click', function() {
 
 document.getElementById('km-regenerate').addEventListener('click', function() {
   var el = document.getElementById('km-seed');
-  el.value = (parseInt(el.value) || 42) + 1;
+  el.value = (parseInt(el.value, 10) || 42) + 1;
   document.getElementById('km-run').click();
 });
 

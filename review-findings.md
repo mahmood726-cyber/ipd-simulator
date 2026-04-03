@@ -1,8 +1,8 @@
-## REVIEW CLEAN — All P0 and P1 fixed (2026-03-31)
+## REVIEW CLEAN — All P0, P1, and P2 fixed (2026-04-03)
 
 ## Multi-Persona Review: index.html
-### Date: 2026-03-31
-### Summary: 2 P0, 6 P1, 6 P2 → **All P0+P1 FIXED, 25/25 tests pass**
+### Date: 2026-03-31 (P2 pass: 2026-04-03)
+### Summary: 2 P0, 6 P1, 6 P2 → **All FIXED, 25/25 tests pass**
 
 #### P0 -- Critical
 - **P0-1** [Statistical Methodologist]: `computeLogRankHR` computes incidence rate ratio, NOT log-rank HR. Biased under non-constant hazards. (line ~699)
@@ -24,13 +24,13 @@
 - **P1-6** [Security]: crypto.subtle unavailable on plain HTTP causes silent export failure (line ~868)
   - Suggested fix: Add fallback guard
 
-#### P2 -- Minor
-- **P2-1** [Statistical]: Monotonicity check before (0,1.0) prepend misses edge case (line ~556)
-- **P2-2** [UX/Accessibility]: Select elements lack aria-label (lines 135, 171, 213)
-- **P2-3** [Statistical]: nextGaussian() wastes half Box-Muller output (line ~349)
-- **P2-4** [Security]: downloadBlob briefly adds visible element to DOM (line ~874)
-- **P2-5** [UX/Accessibility]: Metrics table header in tbody, should use thead (line ~819)
-- **P2-6** [Security]: parseInt missing radix parameter (lines ~1041)
+#### P2 -- Minor (all fixed 2026-04-03)
+- **P2-1** [FIXED]: Monotonicity check moved after (0,1.0) prepend so first user coordinate is also checked against S=1.0
+- **P2-2** [FIXED]: All three select elements now have `aria-label` attributes
+- **P2-3** [FIXED]: nextGaussian() now caches Box-Muller spare value for 2x efficiency
+- **P2-4** [FIXED]: downloadBlob anchor element set to `display:none` before appending to DOM
+- **P2-5** [FIXED]: Metrics and summary tables now use proper `<thead>` for header rows
+- **P2-6** [FIXED]: All parseInt calls now include radix parameter (10)
 
 #### False Positive Watch
 - escapeHtml via createTextNode IS correct
