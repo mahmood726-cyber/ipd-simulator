@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IPD Simulator — Reconstruct Individual Participant Data</title>
-  <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.0.min.js" integrity="sha384-TAqBiqItCr14J//ULLD26bSQ8Z6uPnlisSwkvWaqP8SCSiDkgR8jNknuAv8uxSOT" crossorigin="anonymous"></script>
   <style>
     :root {
       --bg: #f8f9fa; --bg2: #ffffff; --fg: #1a1a2e; --fg2: #555;
@@ -131,7 +131,7 @@
       <div class="btn-row">
         <button class="btn btn-primary" id="km-run">Reconstruct IPD</button>
         <button class="btn btn-secondary" id="km-load-json">Load from KMcurve JSON</button>
-        <input type="file" id="km-json-file" accept=".json" class="hidden">
+        <input type="file" id="km-json-file" accept=".json" class="hidden" aria-label="KMcurve JSON file to import">
         <select id="km-example" class="btn btn-secondary" style="padding:10px 12px" aria-label="Load KM reconstruction example">
           <option value="">Load Example...</option>
           <!-- Examples will be populated in Task 8 -->
